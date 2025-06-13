@@ -1,33 +1,68 @@
 import streamlit as st
 import requests
+import pandas as pd
 
-st.title("Clinical Trials Data Viewer")
+# Set page config
+st.set_page_config(page_title="Clinical Trials Search", layout="wide")
 
-# 👇 User input for search query
-search_query = st.text_input("Enter condition (e.g., 'breast cancer')", value="breast cancer AND stroke")
+# App title
+st.title("🔬 Clinical Trials Search Dashboard")
 
+# Sidebar for inputs
+with st.sidebar:
+    st.header("Search Filters")
+    condition = st.text_input("Condition / Disease", "breast cancer")
+    recruitment_status = st.selectbox("Recruitment Status", ["", "Recruiting", "Completed", "Terminated"])
+    country = st.text_input("Country")
+
+# Construct API parameters
 API_BASE = "https://clinicaltrials.gov/api/v2/studies"
 params = {
-    "query.cond": search_query,
-    "pageSize": 10,
+    "query.cond": condition,
+    "pageSize": 20,
     "format": "json"
 }
 
-# Fetch data only when input is entered
-if search_query:
+if condition:
     response = requests.get(API_BASE, params=params)
 
     if response.status_code == 200:
-        data = response.json()
-        studies = data.get("studies", [])
-        if studies:
-            for study in studies:
-                nct_id = study["protocolSection"]["identificationModule"].get("nctId")
-                title = study["protocolSection"]["identificationModule"].get("briefTitle")
-                status = study["protocolSection"]["statusModule"].get("overallStatus")
-                st.markdown(f"**NCT ID:** {nct_id}  \n**Title:** {title}  \n**Status:** {status}")
-                st.markdown("---")
+        studies = response.json().get("studies", [])
+        results = []
+
+        for study in studies:
+            protocol = study.get("protocolSection", {})
+            id_mod = protocol.get("identificationModule", {})
+            status_mod = protocol.get("statusModule", {})
+            contact_mod = protocol.get("contactsLocationsModule", {})
+
+            trial_id = id_mod.get("nctId", "N/A")
+            title = id_mod.get("briefTitle", "N/A")
+            status = status_mod.get("overallStatus", "N/A")
+            trial_country = contact_mod.get("locations", [{}])[0].get("country", "N/A")
+
+            if recruitment_status and recruitment_status.lower() not in status.lower():
+                continue
+            if country and country.lower() not in trial_country.lower():
+                continue
+
+            results.append({
+                "NCT ID": trial_id,
+                "Title": title,
+                "Status": status,
+                "Country": trial_country
+            })
+
+        if results:
+            df = pd.DataFrame(results)
+            st.success(f"{len(df)} trial(s) found.")
+            st.dataframe(df)
+
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download CSV", data=csv, file_name="clinical_trials.csv", mime="text/csv")
         else:
-            st.info("No studies found for this query.")
+            st.warning("No trials matched your filters.")
     else:
-        st.error(f"Error: {response.status_code}, {response.text}")
+        st.error(f"API Error: {response.status_code}")
+else:
+    st.info("Please enter a condition to begin your search.")
