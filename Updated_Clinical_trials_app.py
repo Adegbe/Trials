@@ -1,13 +1,12 @@
 import streamlit as st
 import requests
 import pandas as pd
-from Bio import Entrez
 
 # Streamlit page config
-st.set_page_config(page_title="Clinical Trials & Publications", layout="wide")
+st.set_page_config(page_title="Clinical Trials Explorer", layout="wide")
 
 # Page title
-st.title("🔬 Clinical Trials Explorer with PubMed Integration")
+st.title("🔬 Clinical Trials Explorer")
 
 # Sidebar input
 with st.sidebar:
@@ -15,25 +14,9 @@ with st.sidebar:
     condition = st.text_input("Condition / Disease", "breast cancer")
     recruitment_status = st.selectbox("Recruitment Status", ["All", "Recruiting", "Completed", "Terminated"])
     country = st.text_input("Country (e.g., United States, China)")
-    st.markdown("---")
-    st.markdown("**Note:** PubMed links will be fetched for the first matching article.")
 
 # API base
 API_BASE = "https://clinicaltrials.gov/api/v2/studies"
-
-# Function to fetch PubMed links via Entrez eSearch
-def get_pubmed_link(condition):
-    Entrez.email = "adegbesamson@gmail.com"
-    try:
-        handle = Entrez.esearch(db="pubmed", term=condition, retmax=1)
-        record = Entrez.read(handle)
-        ids = record.get("IdList", [])
-        if ids:
-            return f"https://pubmed.ncbi.nlm.nih.gov/{ids[0]}"
-    except Exception as e:
-        st.warning(f"PubMed API Error: {str(e)}")
-        return ""
-    return ""
 
 # Run search if condition is provided
 if condition:
@@ -70,7 +53,6 @@ if condition:
             sponsor = sponsor_mod.get("leadSponsor", {}).get("name", "N/A")
             eligibility = f"{eligibility_mod.get('gender', 'N/A')}, {eligibility_mod.get('minimumAge', 'N/A')} to {eligibility_mod.get('maximumAge', 'N/A')}"
             summary = desc_mod.get("briefSummary", "N/A")
-            pubmed_link = get_pubmed_link(condition)
 
             # Apply filters
             if recruitment_status != "All" and recruitment_status.lower() not in status.lower():
@@ -88,7 +70,6 @@ if condition:
                 "Phase": phase,
                 "Sponsor": sponsor,
                 "Eligibility": eligibility,
-                "PubMed Link": pubmed_link,
                 "Description": summary
             })
 
@@ -101,31 +82,19 @@ if condition:
                 df,
                 use_container_width=True,
                 column_config={
-                    "NCT ID": st.column_config.LinkColumn("NCT ID", display_text="View Trial"),
-                    "PubMed Link": st.column_config.LinkColumn("PubMed Link", display_text="View Article"),
+                    "NCT ID": st.column_config.LinkColumn("NCT ID", display_text="View Trial")
                 },
                 hide_index=True
             )
 
             # Download options
             st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                csv = df.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    "📥 Download Full CSV",
-                    data=csv,
-                    file_name="clinical_trials_full.csv",
-                    mime="text/csv"
-                )
-            with col2:
-                csv_light = df.drop(columns=["Description"]).to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    "📥 Download Light CSV",
-                    data=csv_light,
-                    file_name="clinical_trials_light.csv",
-                    mime="text/csv"
-                )
+            st.download_button(
+                "📥 Download CSV",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name="clinical_trials.csv",
+                mime="text/csv"
+            )
         else:
             st.warning("⚠️ No trials matched your filters. Try broadening your search criteria.")
     else:
