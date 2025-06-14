@@ -1,7 +1,7 @@
-
 import streamlit as st
 import requests
 import pandas as pd
+from Bio import Entrez
 
 # Streamlit page config
 st.set_page_config(page_title="Clinical Trials & Publications", layout="wide")
@@ -13,20 +13,16 @@ st.title("🔬 Clinical Trials Explorer with PubMed Integration")
 with st.sidebar:
     st.header("Search Filters")
     condition = st.text_input("Condition / Disease", "breast cancer")
-    recruitment_status = st.selectbox("Recruitment Status", ["", "Recruiting", "Completed", "Terminated"])
+    recruitment_status = st.selectbox("Recruitment Status", ["All", "Recruiting", "Completed", "Terminated"])
     country = st.text_input("Country (e.g., United States, China)")
+    st.markdown("---")
+    st.markdown("**Note:** PubMed links will be fetched for the first matching article.")
 
 # API base
 API_BASE = "https://clinicaltrials.gov/api/v2/studies"
-params = {
-    "query.cond": condition,
-    "pageSize": 20,
-    "format": "json"
-}
 
 # Function to fetch PubMed links via Entrez eSearch
 def get_pubmed_link(condition):
-    from Bio import Entrez
     Entrez.email = "adegbesamson@gmail.com"
     try:
         handle = Entrez.esearch(db="pubmed", term=condition, retmax=1)
@@ -34,13 +30,21 @@ def get_pubmed_link(condition):
         ids = record.get("IdList", [])
         if ids:
             return f"https://pubmed.ncbi.nlm.nih.gov/{ids[0]}"
-    except Exception:
+    except Exception as e:
+        st.warning(f"PubMed API Error: {str(e)}")
         return ""
     return ""
 
 # Run search if condition is provided
 if condition:
-    response = requests.get(API_BASE, params=params)
+    params = {
+        "query.cond": condition,
+        "pageSize": 20,
+        "format": "json"
+    }
+    
+    with st.spinner("Fetching clinical trials data..."):
+        response = requests.get(API_BASE, params=params)
 
     if response.status_code == 200:
         studies = response.json().get("studies", [])
@@ -64,11 +68,12 @@ if condition:
             study_type = design_mod.get("studyType", "N/A")
             phase = design_mod.get("phase", "N/A")
             sponsor = sponsor_mod.get("leadSponsor", {}).get("name", "N/A")
-            eligibility = eligibility_mod.get("gender", "N/A") + ", " + eligibility_mod.get("minimumAge", "N/A") + " to " + eligibility_mod.get("maximumAge", "N/A")
+            eligibility = f"{eligibility_mod.get('gender', 'N/A')}, {eligibility_mod.get('minimumAge', 'N/A')} to {eligibility_mod.get('maximumAge', 'N/A')}"
             summary = desc_mod.get("briefSummary", "N/A")
             pubmed_link = get_pubmed_link(condition)
 
-            if recruitment_status and recruitment_status.lower() not in status.lower():
+            # Apply filters
+            if recruitment_status != "All" and recruitment_status.lower() not in status.lower():
                 continue
             if country and country.lower() not in trial_country.lower():
                 continue
@@ -80,23 +85,71 @@ if condition:
                 "Country": trial_country,
                 "Start Date": start_date,
                 "Study Type": study_type,
-                "Study Phase": phase,
+                "Phase": phase,
                 "Sponsor": sponsor,
                 "Eligibility": eligibility,
-                "Description": summary,
-                "PubMed Link": pubmed_link
+                "PubMed Link": pubmed_link,
+                "Description": summary
             })
 
         if results:
             df = pd.DataFrame(results)
-            st.success(f"{len(df)} trial(s) found.")
-            st.dataframe(df)
+            st.success(f"✅ {len(df)} trial(s) found matching your criteria.")
+            
+            # Display the table with all columns
+            st.dataframe(
+                df,
+                use_container_width=True,
+                column_config={
+                    "NCT ID": st.column_config.LinkColumn("NCT ID", display_text="View Trial"),
+                    "PubMed Link": st.column_config.LinkColumn("PubMed Link", display_text="View Article"),
+                    "Description": None  # Hide this column initially
+                },
+                hide_index=True
+            )
+            
+            # Show description when a row is expanded
+            if not df.empty:
+                st.markdown("### Trial Details")
+                selected_trial = st.selectbox(
+                    "Select a trial to view details:",
+                    df["Title"],
+                    index=0
+                )
+                
+                selected_row = df[df["Title"] == selected_trial].iloc[0]
+                
+                with st.expander("🔍 View full description", expanded=True):
+                    st.markdown(f"**NCT ID:** {selected_row['NCT ID']}")
+                    st.markdown(f"**Title:** {selected_row['Title']}")
+                    st.markdown(f"**Status:** {selected_row['Status']}")
+                    st.markdown(f"**Description:** {selected_row['Description']}")
+                    st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/ct2/show/{selected_row['NCT ID']})")
+                    if selected_row['PubMed Link']:
+                        st.markdown(f"[View on PubMed]({selected_row['PubMed Link']})")
 
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download CSV", data=csv, file_name="clinical_trials_full.csv", mime="text/csv")
+            # Download options
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                csv = df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "📥 Download CSV (All Data)",
+                    data=csv,
+                    file_name="clinical_trials_full.csv",
+                    mime="text/csv"
+                )
+            with col2:
+                csv_light = df.drop(columns=["Description"]).to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "📥 Download CSV (Light Version)",
+                    data=csv_light,
+                    file_name="clinical_trials_light.csv",
+                    mime="text/csv"
+                )
         else:
-            st.warning("No trials matched your filters.")
+            st.warning("⚠️ No trials matched your filters. Try broadening your search criteria.")
     else:
-        st.error(f"API Error: {response.status_code}")
+        st.error(f"⚠️ API Error: {response.status_code} - {response.text}")
 else:
-    st.info("Please enter a condition to begin your search.")
+    st.info("ℹ️ Please enter a condition to begin your search.")
