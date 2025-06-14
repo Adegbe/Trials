@@ -96,37 +96,16 @@ if condition:
             df = pd.DataFrame(results)
             st.success(f"✅ {len(df)} trial(s) found matching your criteria.")
             
-            # Display the table with all columns
+            # Show all columns in the table
             st.dataframe(
                 df,
                 use_container_width=True,
                 column_config={
                     "NCT ID": st.column_config.LinkColumn("NCT ID", display_text="View Trial"),
                     "PubMed Link": st.column_config.LinkColumn("PubMed Link", display_text="View Article"),
-                    "Description": None  # Hide this column initially
                 },
                 hide_index=True
             )
-            
-            # Show description when a row is expanded
-            if not df.empty:
-                st.markdown("### Trial Details")
-                selected_trial = st.selectbox(
-                    "Select a trial to view details:",
-                    df["Title"],
-                    index=0
-                )
-                
-                selected_row = df[df["Title"] == selected_trial].iloc[0]
-                
-                with st.expander("🔍 View full description", expanded=True):
-                    st.markdown(f"**NCT ID:** {selected_row['NCT ID']}")
-                    st.markdown(f"**Title:** {selected_row['Title']}")
-                    st.markdown(f"**Status:** {selected_row['Status']}")
-                    st.markdown(f"**Description:** {selected_row['Description']}")
-                    st.markdown(f"[View on ClinicalTrials.gov](https://clinicaltrials.gov/ct2/show/{selected_row['NCT ID']})")
-                    if selected_row['PubMed Link']:
-                        st.markdown(f"[View on PubMed]({selected_row['PubMed Link']})")
 
             # Download options
             st.markdown("---")
@@ -134,7 +113,7 @@ if condition:
             with col1:
                 csv = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "📥 Download CSV (All Data)",
+                    "📥 Download Full CSV",
                     data=csv,
                     file_name="clinical_trials_full.csv",
                     mime="text/csv"
@@ -142,7 +121,7 @@ if condition:
             with col2:
                 csv_light = df.drop(columns=["Description"]).to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "📥 Download CSV (Light Version)",
+                    "📥 Download Light CSV",
                     data=csv_light,
                     file_name="clinical_trials_light.csv",
                     mime="text/csv"
